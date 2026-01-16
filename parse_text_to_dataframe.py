@@ -94,6 +94,7 @@ class TextToDataFrameParser:
                     if left_amt == 1:
                         pair = f"{iso_ccy}/CNY"
                     else:
+                        # Construct 100JPY/CNY style
                         pair = f"{left_amt}{iso_ccy}/CNY"
                     fx_map[pair] = rate
                 continue
@@ -106,7 +107,7 @@ class TextToDataFrameParser:
 
                 if ccy_ch in self.CN_TO_ISO:
                     iso = self.CN_TO_ISO[ccy_ch]
-                    # Construct CNY/100JPY style
+                    
                     pair = f"CNY/{iso}"
                     fx_map[pair] = rate
                 continue
