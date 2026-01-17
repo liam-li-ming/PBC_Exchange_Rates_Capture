@@ -2,6 +2,8 @@ import access_main_web
 import parse_text_to_dataframe
 import pandas as pd
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+import os
 
 def run():
     main_url = "https://www.pbc.gov.cn/zhengcehuobisi/125207/125217/125925/index.html"
@@ -14,27 +16,43 @@ def run():
     print("Extracting links to DataFrame...")
     links = web.convert_links_to_dataframe(html)
 
-    # Create an empty DataFrame to hold all results
-    df_all = pd.DataFrame()
+    # Process each date's FX data in parallel
+    def process_single_date(d, url):
+        try:
+            print(f"Processing FX on {d}")
+            html = par.fetch_html_with_curl(url)
+            text = par.extract_text(html)
+            parts = par.separate_Chinese_text(text)
+            df_fx = par.extract_fx(parts)
+            # Make the date column first
+            df_fx.insert(0, 'date', d)
+            return df_fx
+        
+        except Exception as e:
+            print(f"Error processing {d} ({url}): {e}")
+            return None
 
-    for d, item in zip(links['date'], links['url']):
-        print(f"Processing FX on {d}")
+    with ThreadPoolExecutor(max_workers = 10) as executor:
+        results = list(executor.map(lambda x: process_single_date(x[0], x[1]),
+                                    zip(links['date'], links['url'])))
 
-        df_date = pd.DataFrame({'date': [d]})
-        html = par.fetch_html_with_curl(item)
-        text = par.extract_text(html)
-        parts = par.separate_Chinese_text(text)
-        df_fx = par.extract_fx(parts)
+    # Filter out None results from errors
+    results = [r for r in results if r is not None]
 
-        df_day = pd.concat([df_date, df_fx], axis = 1)
+    if not results:
+        raise ValueError("No data was successfully processed")
 
-        df_all = pd.concat([df_all, df_day], ignore_index = True)
+    df_all = pd.concat(results, ignore_index = True)
     
     print("Preparing the FX report:")
     print("Exporting to Excel...")
 
     today = datetime.now().strftime('%Y-%m-%d')
-    df_all.to_excel(f"PBC_Exchange_Rates_{today}.xlsx", index = False)
+
+    # Save to Excel in the same directory as the script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    output_path = os.path.join(script_dir, f"PBC_Exchange_Rates_{today}.xlsx")
+    df_all.to_excel(output_path, index = False)
 
     print(df_all)
 
