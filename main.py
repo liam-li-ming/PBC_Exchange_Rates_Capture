@@ -7,12 +7,13 @@ import os
 
 def run():
     main_url = "https://www.pbc.gov.cn/zhengcehuobisi/125207/125217/125925/index.html"
+    
     web = access_main_web.mainWeb()
     par = parse_text_to_dataframe.TextToDataFrameParser()
     
     print("Fetching main page HTML...")
-
     html = web.fetch_html_with_curl()
+
     print("Extracting links to DataFrame...")
     links = web.convert_links_to_dataframe(html)
 
