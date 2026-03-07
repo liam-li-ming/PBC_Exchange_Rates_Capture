@@ -7,7 +7,7 @@ import os
 
 def run():
     main_url = "https://www.pbc.gov.cn/zhengcehuobisi/125207/125217/125925/index.html"
-    
+
     web = access_main_web.mainWeb()
     par = parse_text_to_dataframe.TextToDataFrameParser()
     
@@ -33,7 +33,7 @@ def run():
             print(f"Error processing {d} ({url}): {e}")
             return None
 
-    with ThreadPoolExecutor(max_workers = 10) as executor:
+    with ThreadPoolExecutor(max_workers = 20) as executor:
         results = list(executor.map(lambda x: process_single_date(x[0], x[1]),
                                     zip(links['date'], links['url'])))
 
@@ -55,7 +55,7 @@ def run():
     output_path = os.path.join(script_dir, f"PBC_Exchange_Rates_{today}.xlsx")
     df_all.to_excel(output_path, index = False)
 
-    print(df_all)
+    print(df_all.to_string())
 
 if __name__ == "__main__":
     run()
