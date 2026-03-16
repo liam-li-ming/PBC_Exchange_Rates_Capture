@@ -5,17 +5,12 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import os
 
-def run():
-    main_url = "https://www.pbc.gov.cn/zhengcehuobisi/125207/125217/125925/index.html"
-
+def run(num_rows: int = 20):
     web = access_main_web.mainWeb()
     par = parse_text_to_dataframe.TextToDataFrameParser()
-    
-    print("Fetching main page HTML...")
-    html = web.fetch_html_with_curl()
 
-    print("Extracting links to DataFrame...")
-    links = web.convert_links_to_dataframe(html)
+    print(f"Fetching listing pages for {num_rows} rows of data...")
+    links = web.fetch_links_for_rows(num_rows)
 
     # Process each date's FX data in parallel
     def process_single_date(d, url):
@@ -33,7 +28,7 @@ def run():
             print(f"Error processing {d} ({url}): {e}")
             return None
 
-    with ThreadPoolExecutor(max_workers = 20) as executor:
+    with ThreadPoolExecutor(max_workers = len(links)) as executor:
         results = list(executor.map(lambda x: process_single_date(x[0], x[1]),
                                     zip(links['date'], links['url'])))
 
@@ -58,4 +53,12 @@ def run():
     print(df_all.to_string())
 
 if __name__ == "__main__":
-    run()
+    while True:
+        try:
+            num_rows = int(input("How many historical records would you like to retrieve? (1–2000): "))
+            if 1 <= num_rows <= 2000:
+                break
+            print("Please enter a number between 1 and 2000.")
+        except ValueError:
+            print("Invalid input. Please enter a whole number.")
+    run(num_rows)

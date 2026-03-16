@@ -3,26 +3,50 @@ from bs4 import BeautifulSoup
 import pandas as pd
 from urllib.parse import urljoin
 import re
+import math
+from concurrent.futures import ThreadPoolExecutor
 
 class mainWeb:
 
     def __init__(self):
         self.based_url = "https://www.pbc.gov.cn"
         self.main_url = "https://www.pbc.gov.cn/zhengcehuobisi/125207/125217/125925/index.html"
-        self.page_turning_url = "https://www.pbc.gov.cn/zhengcehuobisi/125207/125217/125925/17105-1.html"
+        self.page_turning_url = "https://www.pbc.gov.cn/zhengcehuobisi/125207/125217/125925/17105-{page_number}.html"
 
-    def fetch_html_with_curl(self):
-
-        curl_command = [
-            "curl",
-            self.main_url
-        ]
+    def fetch_html_with_curl(self, url=None):
+        if url is None:
+            url = self.main_url
+        curl_command = ["curl", url]
         proc = subprocess.run(
-            curl_command, capture_output = True,
-            text = False, check = False
+            curl_command, capture_output=True,
+            text=False, check=False
         )
         html = proc.stdout.decode("utf-8")
         return html
+
+    def fetch_links_for_rows(self, num_rows: int) -> pd.DataFrame:
+        """
+        Fetch enough listing pages to cover num_rows records in parallel.
+        Page 1  → index.html
+        Page N  → 17105-(N-1).html  (for N >= 2, max N = 100)
+        Returns a DataFrame trimmed to exactly num_rows rows.
+        """
+        pages_needed = min(math.ceil(num_rows / 20), 100)
+
+        def fetch_page(page):
+            url = self.main_url if page == 1 else self.page_turning_url.format(page_number=page - 1)
+            print(f"Fetching listing page {page}/{pages_needed}...")
+            html = self.fetch_html_with_curl(url)
+            return page, self.convert_links_to_dataframe(html)
+
+        with ThreadPoolExecutor(max_workers = pages_needed) as executor:
+            page_results = list(executor.map(fetch_page, range(1, pages_needed + 1)))
+
+        # Sort by page number to preserve chronological order
+        page_results.sort(key=lambda x: x[0])
+        all_records = pd.concat([df for _, df in page_results], ignore_index=True)
+
+        return all_records.head(num_rows).reset_index(drop=True)
 
     def convert_links_to_dataframe(self, html):
 
