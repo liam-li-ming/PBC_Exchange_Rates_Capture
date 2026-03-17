@@ -85,6 +85,8 @@
     .btn-sm { padding: 4px 10px; font-size: 12px; }
     .btn-success { background: var(--success); color: #fff; }
     .btn-success:hover { background: #15803d; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #b91c1c; }
 
     /* ── inputs ──────────────────────────────────────────── */
     input[type=number], input[type=date] {
@@ -242,6 +244,7 @@
   <div class="header-right">
     <button class="btn-secondary btn-sm" onclick="downloadFile('csv')">↓ CSV</button>
     <button class="btn-secondary btn-sm" onclick="downloadFile('xlsx')">↓ Excel</button>
+    <button class="btn-danger btn-sm" id="resetBtn" onclick="resetAll()" style="display:none">✕ Reset All</button>
     <button class="btn-secondary btn-sm" id="themeBtn" onclick="toggleTheme()">Dark</button>
   </div>
 </header>
@@ -499,6 +502,7 @@ function setupUI() {
   document.getElementById('statsSection').style.display = '';
   document.getElementById('chartSection').style.display = '';
   document.getElementById('tableSection').style.display = '';
+  document.getElementById('resetBtn').style.display = '';
 
   setStatus(`${allData.records} records · ${currencies.length} currencies · ${dates[0]} to ${dates[dates.length-1]}`, 'ok');
 
@@ -819,6 +823,36 @@ function toast(msg, cls) {
   el.className   = `toast show ${cls || ''}`;
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RESET ALL
+// ═══════════════════════════════════════════════════════════════
+function resetAll() {
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  allData   = null;
+  chartMode = 'raw';
+  tblSort   = { col: 'date', dir: 'desc' };
+  tblPage   = 0;
+
+  document.getElementById('statsSection').style.display = 'none';
+  document.getElementById('chartSection').style.display = 'none';
+  document.getElementById('tableSection').style.display = 'none';
+  document.getElementById('resetBtn').style.display     = 'none';
+
+  document.getElementById('recordCount').value = 100;
+  document.getElementById('ccyGrid').innerHTML = '';
+  document.getElementById('ccyBtnLabel').textContent = 'Select...';
+  document.getElementById('tblHead').innerHTML = '';
+  document.getElementById('tblBody').innerHTML = '';
+
+  document.getElementById('btnRaw').classList.add('active');
+  document.getElementById('btnNorm').classList.remove('active');
+  document.getElementById('bannerScale').style.display = 'none';
+  document.getElementById('bannerNorm').style.display  = 'none';
+
+  setStatus('No data loaded — enter a record count and click Fetch Rates.', '');
+  toast('Reset — ready for a new fetch', 'ok');
 }
 
 // ── boot ──────────────────────────────────────────────────────
