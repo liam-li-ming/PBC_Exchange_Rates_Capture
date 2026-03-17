@@ -1,6 +1,6 @@
 # PBC Exchange Rates Capture
 
-A Python tool that scrapes the **People's Bank of China (PBC)** official website to capture daily CNY central parity exchange rates and exports them to Excel.
+A Python tool that scrapes the **People's Bank of China (PBC)** official website to capture daily CNY central parity exchange rates — with both a **CLI mode** that exports to Excel and an **interactive web dashboard** for visualisation and analysis.
 
 ---
 
@@ -12,7 +12,7 @@ The PBC publishes daily interbank foreign exchange market CNY central parity rat
 2. Discovering all available daily rate pages and their dates
 3. Parsing the Chinese-language rate text from each daily page
 4. Mapping Chinese currency names to ISO 4217 currency codes
-5. Exporting all results to a dated Excel file
+5. Exporting all results to Excel **and/or** serving them through an interactive web dashboard
 
 ---
 
@@ -20,9 +20,14 @@ The PBC publishes daily interbank foreign exchange market CNY central parity rat
 
 ```
 PBC_Exchange_Rates_Capture/
-├── main.py                      # Entry point — orchestrates the full pipeline
-├── access_main_web.py           # Fetches the main listing page and extracts links
-├── parse_text_to_dataframe.py   # Fetches individual rate pages and parses FX data
+├── main.py                              # CLI entry point — scrape & export to Excel
+├── access_main_web.py                   # Fetches the listing page and extracts links
+├── parse_text_to_dataframe.py           # Fetches individual rate pages and parses FX data
+├── web/
+│   ├── api.py                           # FastAPI backend — serves data + frontend
+│   ├── requirements_web.txt             # Web-only dependencies
+│   └── static/
+│       └── index.html                   # Interactive single-page dashboard
 └── PBC_Exchange_Rates_YYYY-MM-DD.xlsx   # Output file (gitignored)
 ```
 
@@ -30,34 +35,108 @@ PBC_Exchange_Rates_Capture/
 
 ## Dependencies
 
+### CLI
+
 | Package          | Purpose                                      |
 |------------------|----------------------------------------------|
 | `beautifulsoup4` | HTML parsing                                 |
 | `lxml`           | HTML parser backend for BeautifulSoup        |
 | `pandas`         | DataFrame construction and Excel export      |
+| `openpyxl`       | Excel file writing                           |
 | `curl`           | System CLI tool used to fetch web pages      |
 
 > `curl` must be available on the system PATH. It is used instead of Python's `urllib`/`requests` to reliably handle the PBC website's encoding and SSL behaviour.
 
-Install Python dependencies:
-
 ```bash
 pip install beautifulsoup4 lxml pandas openpyxl
+```
+
+### Web dashboard (additional)
+
+| Package            | Purpose                          |
+|--------------------|----------------------------------|
+| `fastapi`          | REST API framework               |
+| `uvicorn[standard]`| ASGI server                      |
+| `python-multipart` | Form/body parsing for FastAPI    |
+
+```bash
+pip install -r web/requirements_web.txt
 ```
 
 ---
 
 ## How to Run
 
+### Option 1 — CLI (Excel export)
+
 ```bash
 python main.py
 ```
 
-The script prints progress to the console and writes an Excel file to the same directory:
+The script prompts for a record count, fetches the data in parallel, prints progress to the console, and writes an Excel file to the project root:
 
 ```
 PBC_Exchange_Rates_YYYY-MM-DD.xlsx
 ```
+
+### Option 2 — Interactive Web Dashboard
+
+```bash
+cd web
+uvicorn api:app --reload --port 8000
+```
+
+Then open **http://localhost:8000** in your browser.
+
+> On Windows, if `uvicorn` is not on the PATH, run via the full Python path:
+> ```powershell
+> C:\Users\<you>\miniforge3\Scripts\uvicorn.exe api:app --reload --port 8000
+> # or
+> C:\Users\<you>\miniforge3\python.exe -m uvicorn api:app --reload --port 8000
+> ```
+
+---
+
+## Web Dashboard
+
+The dashboard is a single-page app served by FastAPI (`web/api.py`) backed by the same scraping pipeline used by the CLI.
+
+### Features
+
+| Feature | Description |
+|---|---|
+| **Fetch** | Enter 1–2000 records and click **Fetch Rates** — the scraper runs server-side and results are cached in memory |
+| **Raw Rates chart** | Line chart showing the actual exchange rate for any selection of currencies over time |
+| **Strength Comparison chart** | All selected currencies normalised to **index 100** at the earliest date in the selected window — shows relative appreciation / depreciation vs CNY on a common scale |
+| **Scale warning** | Automatically detects when selected raw rates have very different scales and nudges you to Strength Comparison mode |
+| **Currency selector** | Multi-select dropdown with **All / None / Majors** presets; selections are applied only on **✓ Confirm** (dropdown stays open while selecting) |
+| **Date range filter** | Narrow both the chart and table to any date window |
+| **Sortable paginated table** | Click any column header to sort; 50 rows per page |
+| **Download** | Export the current dataset as **CSV** or **Excel** from the header bar |
+| **Dark / Light mode** | Toggle in the header |
+| **State persistence** | Re-opening the page automatically reloads the last fetched dataset from the server cache |
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/fetch` | `{"records": N}` — run scraper, cache result, return data |
+| `GET`  | `/api/rates` | Return cached data as JSON |
+| `GET`  | `/api/download?format=xlsx\|csv` | Download the cached dataset |
+
+### Currency Strength Comparison — How It Works
+
+Select two or more currency pairs and switch to **Strength Comparison** mode. Each series is normalised:
+
+```
+indexed_value = (rate_on_date / rate_on_base_date) × 100
+```
+
+- **Base date** = the earliest date in the selected date range (= 100 for all series)
+- For **X/CNY** pairs (e.g. USD/CNY): a value **above 100** means X has strengthened vs CNY
+- For **CNY/X** pairs (e.g. CNY/HKD): a value **above 100** means CNY has strengthened vs X
+
+This makes it easy to compare, for example, how USD, EUR, and GBP have moved against CNY over the same period, regardless of their different absolute rate scales.
 
 ---
 

@@ -31,7 +31,8 @@ class mainWeb:
         Page N  → 17105-(N-1).html  (for N >= 2, max N = 100)
         Returns a DataFrame trimmed to exactly num_rows rows.
         """
-        pages_needed = min(math.ceil(num_rows / 20), 100)
+        # Fetch extra pages to ensure enough unique links after deduplication
+        pages_needed = min(math.ceil(num_rows / 20) + 2, 100)
 
         def fetch_page(page):
             url = self.main_url if page == 1 else self.page_turning_url.format(page_number=page - 1)
@@ -46,7 +47,11 @@ class mainWeb:
         page_results.sort(key=lambda x: x[0])
         all_records = pd.concat([df for _, df in page_results], ignore_index=True)
 
-        return all_records.head(num_rows).reset_index(drop=True)
+        return (all_records
+                .drop_duplicates(subset='url')
+                .reset_index(drop=True)
+                .head(num_rows)
+                .reset_index(drop=True))
 
     def convert_links_to_dataframe(self, html):
 

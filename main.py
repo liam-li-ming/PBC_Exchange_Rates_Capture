@@ -11,6 +11,7 @@ def run(num_rows: int = 20):
 
     print(f"Fetching listing pages for {num_rows} rows of data...")
     links = web.fetch_links_for_rows(num_rows)
+    links = links.drop_duplicates(subset='url').reset_index(drop=True)
 
     # Process each date's FX data in parallel
     def process_single_date(d, url):

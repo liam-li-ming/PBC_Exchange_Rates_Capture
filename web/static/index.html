@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PBC Exchange Rates Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── CSS custom properties ─────────────────────────── */
+    :root {
+      --bg:      #f1f5f9;
+      --surface: #ffffff;
+      --border:  #e2e8f0;
+      --text:    #1e293b;
+      --muted:   #64748b;
+      --primary: #2563eb;
+      --primary-h: #1d4ed8;
+      --success: #16a34a;
+      --danger:  #dc2626;
+      --warn:    #d97706;
+      --shadow:  0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+      --r: 8px;
+    }
+    [data-theme="dark"] {
+      --bg:      #0f172a;
+      --surface: #1e293b;
+      --border:  #334155;
+      --text:    #f1f5f9;
+      --muted:   #94a3b8;
+      --shadow:  0 1px 3px rgba(0,0,0,.4);
+    }
+
+    /* ── reset ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px; min-height: 100vh;
+    }
+
+    /* ── header ─────────────────────────────────────────── */
+    header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 14px 24px; display: flex; align-items: center;
+      justify-content: space-between; position: sticky; top: 0; z-index: 100;
+      box-shadow: var(--shadow);
+    }
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo h1 { font-size: 17px; font-weight: 700; color: var(--primary); }
+    .logo .badge {
+      font-size: 11px; color: var(--muted); padding: 2px 8px;
+      background: var(--bg); border-radius: 12px; border: 1px solid var(--border);
+    }
+    .header-right { display: flex; gap: 8px; }
+
+    /* ── main layout ─────────────────────────────────────── */
+    main {
+      max-width: 1440px; margin: 0 auto; padding: 20px 24px;
+      display: flex; flex-direction: column; gap: 18px;
+    }
+
+    /* ── card ────────────────────────────────────────────── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 20px; box-shadow: var(--shadow);
+    }
+    .card-title {
+      font-size: 14px; font-weight: 600; margin-bottom: 14px; color: var(--text);
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ── buttons ─────────────────────────────────────────── */
+    button {
+      padding: 7px 14px; border: none; border-radius: var(--r);
+      cursor: pointer; font-size: 13px; font-weight: 500;
+      transition: background .15s, opacity .15s, transform .1s;
+      white-space: nowrap;
+    }
+    button:active { transform: scale(.98); }
+    .btn-primary  { background: var(--primary); color: #fff; }
+    .btn-primary:hover  { background: var(--primary-h); }
+    .btn-primary:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { background: #15803d; }
+
+    /* ── inputs ──────────────────────────────────────────── */
+    input[type=number], input[type=date] {
+      padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--r);
+      background: var(--bg); color: var(--text); font-size: 13px;
+    }
+    input[type=number] { width: 110px; }
+
+    /* ── fetch row ───────────────────────────────────────── */
+    .fetch-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .status-bar { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 18px; }
+    .status-bar.ok  { color: var(--success); }
+    .status-bar.err { color: var(--danger); }
+
+    /* ── progress bar ────────────────────────────────────── */
+    .progress-wrap { margin-top: 12px; display: none; }
+    .progress-meta {
+      display: flex; justify-content: space-between;
+      font-size: 12px; color: var(--muted); margin-bottom: 5px;
+    }
+    .progress-meta .pct { font-weight: 700; color: var(--primary); }
+    .progress-track {
+      background: var(--border); border-radius: 999px; height: 8px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 0%; border-radius: 999px;
+      background: linear-gradient(90deg, var(--primary), #60a5fa);
+      transition: width 0.35s ease;
+    }
+
+    /* ── stats row ───────────────────────────────────────── */
+    .stats-row { display: flex; gap: 14px; flex-wrap: wrap; }
+    .stat-card {
+      flex: 1; min-width: 150px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--r);
+      padding: 14px 18px; box-shadow: var(--shadow);
+    }
+    .stat-card .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+    .stat-card .val { font-size: 20px; font-weight: 700; color: var(--primary); }
+    .stat-card .val.sm { font-size: 13px; margin-top: 2px; }
+
+    /* ── chart controls ──────────────────────────────────── */
+    .chart-controls {
+      display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .ctrl-group { display: flex; flex-direction: column; gap: 5px; }
+    .ctrl-lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
+    /* mode toggle */
+    .mode-toggle {
+      display: flex; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
+    }
+    .mode-toggle button { border-radius: 0; background: transparent; color: var(--muted); border: none; }
+    .mode-toggle button.active { background: var(--primary); color: #fff; }
+
+    /* ── currency dropdown ───────────────────────────────── */
+    .ccy-wrapper { position: relative; }
+    .ccy-btn {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      display: flex; align-items: center; gap: 6px; min-width: 210px;
+      justify-content: space-between; padding: 7px 12px;
+    }
+    .ccy-panel {
+      display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 300;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 12px; min-width: 310px;
+    }
+    .ccy-panel.open { display: block; }
+    .ccy-actions { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+    .ccy-confirm {
+      width: 100%; margin-top: 10px; padding: 8px;
+      background: var(--primary); color: #fff; border-radius: var(--r);
+      font-size: 13px; font-weight: 600;
+    }
+    .ccy-confirm:hover { background: var(--primary-h); }
+    .ccy-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 3px; max-height: 280px; overflow-y: auto;
+    }
+    .ccy-item {
+      display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+      border-radius: 4px; cursor: pointer; transition: background .1s;
+    }
+    .ccy-item:hover { background: var(--bg); }
+    .ccy-item input { cursor: pointer; accent-color: var(--primary); flex-shrink: 0; }
+    .ccy-item label { font-size: 13px; font-weight: 500; cursor: pointer; }
+
+    /* ── chart ───────────────────────────────────────────── */
+    .chart-wrap { position: relative; height: 420px; }
+    .info-banner {
+      font-size: 12px; padding: 7px 12px; border-radius: 5px;
+      margin-bottom: 10px; border-left: 3px solid; display: none;
+    }
+    .info-banner.warn  { color: #92400e; background: #fef9c3; border-color: var(--warn); }
+    .info-banner.info  { color: var(--muted); background: var(--bg); border-color: var(--primary); }
+    [data-theme="dark"] .info-banner.warn { color: #fde68a; background: #422006; }
+
+    /* ── table ───────────────────────────────────────────── */
+    .table-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .table-toolbar .spacer { flex: 1; }
+    .tbl-wrap { overflow-x: auto; overflow-y: auto; max-height: 500px; border: 1px solid var(--border); border-radius: var(--r); }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    thead { position: sticky; top: 0; background: var(--bg); z-index: 10; }
+    th {
+      padding: 9px 14px; text-align: right; font-weight: 600; font-size: 11px;
+      color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+      border-bottom: 2px solid var(--border); white-space: nowrap;
+      cursor: pointer; user-select: none;
+    }
+    th:first-child { text-align: left; }
+    th:hover { color: var(--text); }
+    th.sorted { color: var(--primary); }
+    td {
+      padding: 7px 14px; border-bottom: 1px solid var(--border);
+      white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right;
+    }
+    td:first-child { text-align: left; font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+    .pg-row { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 10px; font-size: 12px; color: var(--muted); }
+
+    /* ── spinner ─────────────────────────────────────────── */
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+      border-radius: 50%; animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── toast ───────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+      background: #1e293b; color: #f1f5f9; padding: 11px 18px;
+      border-radius: var(--r); font-size: 13px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.3);
+      transform: translateY(80px); opacity: 0;
+      transition: transform .3s, opacity .3s;
+      pointer-events: none;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.ok  { border-left: 4px solid var(--success); }
+    #toast.err { border-left: 4px solid var(--danger); }
+  </style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<!-- ── header ───────────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <h1>PBC Exchange Rates</h1>
+    <span class="badge">CNY Central Parity · PBC Official</span>
+  </div>
+  <div class="header-right">
+    <button class="btn-secondary btn-sm" onclick="downloadFile('csv')">↓ CSV</button>
+    <button class="btn-secondary btn-sm" onclick="downloadFile('xlsx')">↓ Excel</button>
+    <button class="btn-secondary btn-sm" id="themeBtn" onclick="toggleTheme()">Dark</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── fetch card ─────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">📡 Fetch Data</div>
+    <div class="fetch-row">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+        Records (1–2000)
+        <input type="number" id="recordCount" value="100" min="1" max="2000" />
+      </label>
+      <button class="btn-primary" id="fetchBtn" onclick="onFetch()">Fetch Rates</button>
+    </div>
+    <div class="status-bar" id="statusBar">No data loaded — enter a record count and click Fetch Rates.</div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-meta">
+        <span id="progressLabel">Fetching…</span>
+        <span class="pct" id="progressPct">0%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── stats row (hidden until data loads) ────────────────────────────── -->
+  <div class="stats-row" id="statsSection" style="display:none">
+    <div class="stat-card">
+      <div class="lbl">Records</div>
+      <div class="val" id="sRecords">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="lbl">Date Range</div>
+      <div class="val sm" id="sRange">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="lbl">Currencies</div>
+      <div class="val" id="sCurrencies">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="lbl">Last Fetched</div>
+      <div class="val sm" id="sFetched">—</div>
+    </div>
+  </div>
+
+  <!-- ── chart card ─────────────────────────────────────────────────────── -->
+  <div class="card" id="chartSection" style="display:none">
+    <div class="card-title">📈 Exchange Rate Chart</div>
+
+    <div class="chart-controls">
+      <!-- currency selector -->
+      <div class="ctrl-group">
+        <span class="ctrl-lbl">Currencies</span>
+        <div class="ccy-wrapper">
+          <button class="ccy-btn" onclick="toggleCcyPanel(event)">
+            <span id="ccyBtnLabel">Select...</span>
+            <span style="font-size:10px">▾</span>
+          </button>
+          <div class="ccy-panel" id="ccyPanel">
+            <div class="ccy-actions">
+              <button class="btn-secondary btn-sm" onclick="selectAll(true)">All</button>
+              <button class="btn-secondary btn-sm" onclick="selectAll(false)">None</button>
+              <button class="btn-secondary btn-sm" onclick="selectMajors()">Majors</button>
+            </div>
+            <div class="ccy-grid" id="ccyGrid"></div>
+            <button class="ccy-confirm" onclick="confirmSelection()">✓ Confirm Selection</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- mode toggle -->
+      <div class="ctrl-group">
+        <span class="ctrl-lbl">Chart Mode</span>
+        <div class="mode-toggle">
+          <button id="btnRaw"  class="active" onclick="setMode('raw')">Raw Rates</button>
+          <button id="btnNorm" onclick="setMode('normalized')">Strength Comparison</button>
+        </div>
+      </div>
+
+      <!-- date range -->
+      <div class="ctrl-group">
+        <span class="ctrl-lbl">Date Range</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="date" id="dateFrom" onchange="onDateChange()" />
+          <span style="color:var(--muted)">→</span>
+          <input type="date" id="dateTo"   onchange="onDateChange()" />
+          <button class="btn-secondary btn-sm" onclick="resetDates()">Reset</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- banners -->
+    <div id="bannerScale" class="info-banner warn" style="display:none">
+      ⚠ Multiple currencies selected have very different scales — switch to
+      <b>Strength Comparison</b> mode for a meaningful side-by-side view.
+    </div>
+    <div id="bannerNorm" class="info-banner info" style="display:none">
+      📊 All series indexed to <b>100</b> at the earliest date in the selected range.&nbsp;
+      For <b>X/CNY</b> pairs: value&nbsp;&gt;&nbsp;100 means X strengthened vs CNY.&nbsp;
+      For <b>CNY/X</b> pairs: value&nbsp;&gt;&nbsp;100 means CNY strengthened vs X.
+    </div>
+
+    <div class="chart-wrap">
+      <canvas id="ratesChart"></canvas>
+    </div>
+  </div>
+
+  <!-- ── table card ─────────────────────────────────────────────────────── -->
+  <div class="card" id="tableSection" style="display:none">
+    <div class="table-toolbar">
+      <div class="card-title" style="margin:0">🗂 Data Table</div>
+      <div class="spacer"></div>
+      <span style="font-size:12px;color:var(--muted)" id="tblInfo"></span>
+      <button class="btn-secondary btn-sm" onclick="changePage(-1)">← Prev</button>
+      <button class="btn-secondary btn-sm" onclick="changePage(1)">Next →</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead id="tblHead"></thead>
+        <tbody id="tblBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+let allData   = null;   // API response object
+let chartInst = null;
+let chartMode = 'raw';  // 'raw' | 'normalized'
+let tblSort   = { col: 'date', dir: 'desc' };
+let tblPage   = 0;
+const PAGE    = 50;
+
+const MAJORS = ['USD/CNY', 'EUR/CNY', 'GBP/CNY', '100JPY/CNY', 'AUD/CNY', 'HKD/CNY'];
+
+const PALETTE = [
+  '#2563eb','#dc2626','#16a34a','#9333ea','#d97706',
+  '#0891b2','#be185d','#65a30d','#7c3aed','#0d9488',
+  '#ea580c','#4338ca','#db2777','#15803d','#b91c1c',
+  '#1d4ed8','#7e22ce','#a16207','#0e7490','#5b21b6',
+  '#166534','#9a3412','#6d28d9','#1e40af','#b45309',
+];
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+async function init() {
+  try {
+    const r = await fetch('/api/rates');
+    if (r.ok) {
+      allData = await r.json();
+      setupUI();
+      toast(`Loaded ${allData.records} cached records`, 'ok');
+    }
+  } catch (_) { /* no cached data yet */ }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FETCH
+// ═══════════════════════════════════════════════════════════════
+let _pollTimer = null;
+
+function startProgressPolling() {
+  document.getElementById('progressWrap').style.display = 'block';
+  setProgress(0, 0, 0);
+  _pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/progress');
+      if (!r.ok) return;
+      const p = await r.json();
+      setProgress(p.percent, p.current, p.total);
+    } catch (_) {}
+  }, 400);
+}
+
+function stopProgressPolling(finalPct) {
+  clearInterval(_pollTimer);
+  _pollTimer = null;
+  setProgress(finalPct ?? 100, null, null);
+  setTimeout(() => {
+    document.getElementById('progressWrap').style.display = 'none';
+    setProgress(0, 0, 0);
+  }, 1200);
+}
+
+function setProgress(pct, current, total) {
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressPct').textContent  = pct + '%';
+  document.getElementById('progressLabel').textContent =
+    current != null && total != null
+      ? `Retrieving records… ${current} / ${total}`
+      : pct >= 100 ? 'Complete' : 'Retrieving…';
+}
+
+async function onFetch() {
+  const n = parseInt(document.getElementById('recordCount').value);
+  if (isNaN(n) || n < 1 || n > 2000) {
+    toast('Enter a number between 1 and 2000', 'err'); return;
+  }
+  const btn = document.getElementById('fetchBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Fetching…';
+  setStatus('Fetching from PBC website — this may take a moment…', '');
+  startProgressPolling();
+
+  try {
+    const r = await fetch('/api/fetch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ records: n }),
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || 'Server error'); }
+    allData = await r.json();
+    stopProgressPolling(100);
+    setupUI();
+    toast(`Fetched ${allData.records} records successfully`, 'ok');
+  } catch (e) {
+    stopProgressPolling(0);
+    setStatus('Error: ' + e.message, 'err');
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Fetch Rates';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETUP UI AFTER DATA LOADS
+// ═══════════════════════════════════════════════════════════════
+function setupUI() {
+  const currencies = allData.columns.filter(c => c !== 'date');
+  const dates = allData.data.map(r => r.date).sort();
+
+  // Stats
+  document.getElementById('sRecords').textContent    = allData.records;
+  document.getElementById('sRange').textContent      = `${dates[0]}  →  ${dates[dates.length-1]}`;
+  document.getElementById('sCurrencies').textContent = currencies.length;
+  document.getElementById('sFetched').textContent    = new Date(allData.fetched_at).toLocaleString();
+
+  // Default date range
+  document.getElementById('dateFrom').value = dates[0];
+  document.getElementById('dateTo').value   = dates[dates.length - 1];
+
+  buildCurrencyGrid(currencies);
+
+  document.getElementById('statsSection').style.display = '';
+  document.getElementById('chartSection').style.display = '';
+  document.getElementById('tableSection').style.display = '';
+
+  setStatus(`${allData.records} records · ${currencies.length} currencies · ${dates[0]} to ${dates[dates.length-1]}`, 'ok');
+
+  tblPage = 0;
+  renderChart();
+  renderTable();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CURRENCY SELECTOR
+// ═══════════════════════════════════════════════════════════════
+function buildCurrencyGrid(currencies) {
+  const grid = document.getElementById('ccyGrid');
+  grid.innerHTML = '';
+  currencies.forEach((ccy, i) => {
+    const div = document.createElement('div');
+    div.className = 'ccy-item';
+    const checked = MAJORS.includes(ccy);
+    div.innerHTML = `
+      <input type="checkbox" id="cb${i}" value="${ccy}" ${checked ? 'checked' : ''}>
+      <label for="cb${i}" style="color:${PALETTE[i % PALETTE.length]}">${ccy}</label>`;
+    grid.appendChild(div);
+  });
+  updateCcyLabel();
+}
+
+function toggleCcyPanel(e) {
+  e.stopPropagation();
+  document.getElementById('ccyPanel').classList.toggle('open');
+}
+
+function confirmSelection() {
+  updateCcyLabel();
+  document.getElementById('ccyPanel').classList.remove('open');
+  renderChart();
+}
+
+function selectAll(val) {
+  document.querySelectorAll('#ccyGrid input').forEach(cb => cb.checked = val);
+}
+
+function selectMajors() {
+  document.querySelectorAll('#ccyGrid input').forEach(cb => {
+    cb.checked = MAJORS.includes(cb.value);
+  });
+}
+
+function getSelected() {
+  return [...document.querySelectorAll('#ccyGrid input:checked')].map(cb => cb.value);
+}
+
+function updateCcyLabel() {
+  const sel = getSelected();
+  const el  = document.getElementById('ccyBtnLabel');
+  if      (sel.length === 0)  el.textContent = 'None selected';
+  else if (sel.length <= 3)   el.textContent = sel.join(', ');
+  else                        el.textContent = `${sel.length} currencies selected`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+function getCurrencies() {
+  return allData ? allData.columns.filter(c => c !== 'date') : [];
+}
+
+function colorOf(ccy) {
+  return PALETTE[getCurrencies().indexOf(ccy) % PALETTE.length];
+}
+
+function getFilteredData() {
+  if (!allData) return [];
+  const from = document.getElementById('dateFrom').value;
+  const to   = document.getElementById('dateTo').value;
+  return allData.data
+    .filter(r => (!from || r.date >= from) && (!to || r.date <= to))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function onDateChange() { tblPage = 0; renderChart(); renderTable(); }
+
+function resetDates() {
+  if (!allData) return;
+  const dates = allData.data.map(r => r.date).sort();
+  document.getElementById('dateFrom').value = dates[0];
+  document.getElementById('dateTo').value   = dates[dates.length - 1];
+  onDateChange();
+}
+
+function setMode(m) {
+  chartMode = m;
+  document.getElementById('btnRaw').classList.toggle('active',  m === 'raw');
+  document.getElementById('btnNorm').classList.toggle('active', m === 'normalized');
+  document.getElementById('bannerNorm').style.display = m === 'normalized' ? '' : 'none';
+  renderChart();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CHART
+// ═══════════════════════════════════════════════════════════════
+function renderChart() {
+  if (!allData) return;
+  updateCcyLabel();
+
+  const selected = getSelected();
+  const data     = getFilteredData();
+
+  if (!selected.length || !data.length) return;
+
+  // Scale-difference warning (raw mode only)
+  const warnEl = document.getElementById('bannerScale');
+  if (chartMode === 'raw' && selected.length > 1) {
+    const maxVals = selected.map(ccy => Math.max(...data.map(r => r[ccy] ?? 0).filter(v => v)));
+    const ratio   = Math.max(...maxVals) / (Math.min(...maxVals.filter(v => v > 0)) || 1);
+    warnEl.style.display = ratio > 5 ? '' : 'none';
+  } else {
+    warnEl.style.display = 'none';
+  }
+
+  const labels   = data.map(r => r.date);
+  const isNorm   = chartMode === 'normalized';
+  const pts      = data.length;
+  const datasets = isNorm
+    ? buildNormalized(data, selected, pts)
+    : buildRaw(data, selected, pts);
+
+  if (isNorm) {
+    // reference line at 100
+    datasets.push({
+      label: '— Base 100',
+      data: labels.map(() => 100),
+      borderColor: 'rgba(150,150,150,.45)',
+      borderDash: [6, 4], borderWidth: 1.5,
+      pointRadius: 0, fill: false, tension: 0,
+    });
+  }
+
+  const opts = {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    animation: { duration: 250 },
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: {
+          usePointStyle: true, padding: 14, font: { size: 12 },
+          filter: item => !item.text.startsWith('—'),
+        },
+      },
+      tooltip: {
+        filter: item => !item.dataset.label.startsWith('—'),
+        callbacks: {
+          label: ctx => {
+            if (ctx.raw == null) return null;
+            return isNorm
+              ? ` ${ctx.dataset.label}: ${ctx.raw.toFixed(2)}`
+              : ` ${ctx.dataset.label}: ${ctx.raw.toFixed(4)}`;
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        ticks: { maxTicksLimit: 14, maxRotation: 45, font: { size: 11 } },
+        grid:  { color: 'rgba(128,128,128,.12)' },
+      },
+      y: {
+        title: {
+          display: true,
+          text: isNorm
+            ? `Indexed to 100  (base: ${data[0]?.date})`
+            : 'Rate',
+          font: { size: 11 },
+        },
+        grid: { color: 'rgba(128,128,128,.12)' },
+        ticks: { font: { size: 11 } },
+      },
+    },
+  };
+
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  const ctx = document.getElementById('ratesChart').getContext('2d');
+  chartInst = new Chart(ctx, { type: 'line', data: { labels, datasets }, options: opts });
+}
+
+function buildRaw(data, currencies, pts) {
+  return currencies.map(ccy => ({
+    label: ccy,
+    data: data.map(r => r[ccy] ?? null),
+    borderColor: colorOf(ccy),
+    backgroundColor: colorOf(ccy) + '18',
+    borderWidth: 2,
+    pointRadius: pts > 120 ? 0 : 3,
+    pointHoverRadius: 5,
+    tension: 0.15,
+    spanGaps: true,
+    fill: false,
+  }));
+}
+
+function buildNormalized(data, currencies, pts) {
+  // Base value = first non-null value per currency in the filtered window
+  const base = {};
+  currencies.forEach(ccy => {
+    for (const row of data) {
+      if (row[ccy] != null) { base[ccy] = row[ccy]; break; }
+    }
+  });
+
+  return currencies.map(ccy => ({
+    label: ccy,
+    data: data.map(r => {
+      if (r[ccy] == null || !base[ccy]) return null;
+      return +((r[ccy] / base[ccy]) * 100).toFixed(4);
+    }),
+    borderColor: colorOf(ccy),
+    backgroundColor: colorOf(ccy) + '18',
+    borderWidth: 2,
+    pointRadius: pts > 120 ? 0 : 3,
+    pointHoverRadius: 5,
+    tension: 0.15,
+    spanGaps: true,
+    fill: false,
+  }));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TABLE
+// ═══════════════════════════════════════════════════════════════
+function renderTable() {
+  if (!allData) return;
+  const currencies = getCurrencies();
+  const allCols    = ['date', ...currencies];
+  const data       = getFilteredData();
+
+  // Sort
+  const sorted = [...data].sort((a, b) => {
+    const va = a[tblSort.col] ?? 0, vb = b[tblSort.col] ?? 0;
+    const cmp = typeof va === 'string' ? va.localeCompare(vb) : va - vb;
+    return tblSort.dir === 'asc' ? cmp : -cmp;
+  });
+
+  const total = sorted.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE));
+  if (tblPage >= pages) tblPage = pages - 1;
+
+  const slice = sorted.slice(tblPage * PAGE, (tblPage + 1) * PAGE);
+
+  document.getElementById('tblInfo').textContent =
+    `${total} rows · page ${tblPage + 1} / ${pages}`;
+
+  // Header
+  document.getElementById('tblHead').innerHTML =
+    '<tr>' + allCols.map(col => {
+      const arrow = tblSort.col === col ? (tblSort.dir === 'asc' ? ' ↑' : ' ↓') : '';
+      return `<th class="${tblSort.col === col ? 'sorted' : ''}" onclick="sortBy('${col}')">${col}${arrow}</th>`;
+    }).join('') + '</tr>';
+
+  // Body
+  document.getElementById('tblBody').innerHTML = slice.map(row =>
+    '<tr>' + allCols.map(col => {
+      if (col === 'date') return `<td>${row[col] ?? ''}</td>`;
+      const v = row[col];
+      return v != null
+        ? `<td>${v.toFixed(4)}</td>`
+        : `<td style="color:var(--muted)">—</td>`;
+    }).join('') + '</tr>'
+  ).join('');
+}
+
+function sortBy(col) {
+  tblSort.dir = tblSort.col === col
+    ? (tblSort.dir === 'asc' ? 'desc' : 'asc')
+    : (col === 'date' ? 'desc' : 'asc');
+  tblSort.col = col;
+  tblPage = 0;
+  renderTable();
+}
+
+function changePage(d) {
+  if (!allData) return;
+  const total = getFilteredData().length;
+  const pages = Math.max(1, Math.ceil(total / PAGE));
+  tblPage = Math.min(Math.max(0, tblPage + d), pages - 1);
+  renderTable();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOWNLOAD
+// ═══════════════════════════════════════════════════════════════
+function downloadFile(fmt) {
+  if (!allData) { toast('No data loaded yet', 'err'); return; }
+  window.location.href = `/api/download?format=${fmt}`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// THEME
+// ═══════════════════════════════════════════════════════════════
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  document.getElementById('themeBtn').textContent = isDark ? 'Dark' : 'Light';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATUS + TOAST
+// ═══════════════════════════════════════════════════════════════
+function setStatus(msg, cls) {
+  const el = document.getElementById('statusBar');
+  el.textContent = msg;
+  el.className   = 'status-bar ' + (cls || '');
+}
+
+let _toastTimer = null;
+function toast(msg, cls) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = `toast show ${cls || ''}`;
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// ── boot ──────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
