@@ -1,10 +1,24 @@
-import subprocess
+import threading
+import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 from urllib.parse import urljoin
 import re
 import math
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+_session_local = threading.local()
+
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+}
+
+def _get_session():
+    if not hasattr(_session_local, "session"):
+        s = requests.Session()
+        s.headers.update(_HEADERS)
+        _session_local.session = s
+    return _session_local.session
 
 class mainWeb:
 
@@ -16,15 +30,10 @@ class mainWeb:
     def fetch_html_with_curl(self, url=None):
         if url is None:
             url = self.main_url
-        curl_command = ["curl", url]
-        proc = subprocess.run(
-            curl_command, capture_output=True,
-            text=False, check=False
-        )
-        html = proc.stdout.decode("utf-8")
-        return html
+        resp = _get_session().get(url, timeout=30)
+        return resp.content.decode("utf-8", errors="ignore")
 
-    def fetch_links_for_rows(self, num_rows: int) -> pd.DataFrame:
+    def fetch_links_for_rows(self, num_rows: int, on_progress=None) -> pd.DataFrame:
         """
         Fetch enough listing pages to cover num_rows records in parallel.
         Page 1  → index.html
@@ -40,8 +49,13 @@ class mainWeb:
             html = self.fetch_html_with_curl(url)
             return page, self.convert_links_to_dataframe(html)
 
-        with ThreadPoolExecutor(max_workers = pages_needed) as executor:
-            page_results = list(executor.map(fetch_page, range(1, pages_needed + 1)))
+        page_results = []
+        with ThreadPoolExecutor(max_workers=pages_needed) as executor:
+            futures = {executor.submit(fetch_page, p): p for p in range(1, pages_needed + 1)}
+            for future in as_completed(futures):
+                page_results.append(future.result())
+                if on_progress:
+                    on_progress()
 
         # Sort by page number to preserve chronological order
         page_results.sort(key=lambda x: x[0])

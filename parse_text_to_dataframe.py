@@ -1,9 +1,23 @@
+import threading
+import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import re
-import subprocess
 import html as ihtml
 from datetime import datetime
+
+_session_local = threading.local()
+
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+}
+
+def _get_session():
+    if not hasattr(_session_local, "session"):
+        s = requests.Session()
+        s.headers.update(_HEADERS)
+        _session_local.session = s
+    return _session_local.session
 
 class TextToDataFrameParser:
 
@@ -26,17 +40,8 @@ class TextToDataFrameParser:
         self.pattern_cny_base = re.compile(r'人民币(?P<left_amt>\d+)元对(?P<rate>[\d\.]+)(?P<right_ccy>[\u4e00-\u9fa5]+)')
 
     def fetch_html_with_curl(self, url):
-
-        curl_command = [
-            "curl",
-            url
-        ]
-        proc = subprocess.run(
-            curl_command, capture_output = True,
-            text = False, check = False
-        )
-        html = proc.stdout.decode("utf-8")
-        return html
+        resp = _get_session().get(url, timeout=30)
+        return resp.content.decode("utf-8", errors="ignore")
     
     @staticmethod
     def extract_text(html):

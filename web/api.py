@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import pandas as pd
-import io, json, threading
+import io, json, threading, math
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -19,7 +19,7 @@ _lock = threading.Lock()
 _store: dict = {"df": None, "fetched_at": None}
 
 _prog_lock = threading.Lock()
-_prog: dict  = {"status": "idle", "current": 0, "total": 0}
+_prog: dict  = {"status": "idle", "phase": "idle", "current": 0, "total": 0}
 
 
 class FetchRequest(BaseModel):
@@ -31,11 +31,20 @@ class FetchRequest(BaseModel):
 def _scrape(num_rows: int) -> pd.DataFrame:
     web = access_main_web.mainWeb()
     par = parse_text_to_dataframe.TextToDataFrameParser()
-    links = web.fetch_links_for_rows(num_rows)
+
+    pages_needed = min(math.ceil(num_rows / 20) + 2, 100)
+    with _prog_lock:
+        _prog.update({"status": "running", "phase": "indexing", "current": 0, "total": pages_needed})
+
+    def on_index_done():
+        with _prog_lock:
+            _prog["current"] += 1
+
+    links = web.fetch_links_for_rows(num_rows, on_progress=on_index_done)
     links = links.drop_duplicates(subset='url').reset_index(drop=True)
 
     with _prog_lock:
-        _prog.update({"status": "running", "current": 0, "total": len(links)})
+        _prog.update({"phase": "fetching", "current": 0, "total": len(links)})
 
     def process(d, url):
         try:
@@ -50,7 +59,7 @@ def _scrape(num_rows: int) -> pd.DataFrame:
             return None
 
     results = []
-    cap = min(len(links), 20)
+    cap = 1000
     with ThreadPoolExecutor(max_workers=cap) as ex:
         futures = {ex.submit(process, row["date"], row["url"]): row["date"]
                    for _, row in links.iterrows()}

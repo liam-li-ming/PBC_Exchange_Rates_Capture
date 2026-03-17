@@ -112,7 +112,7 @@
     .progress-fill {
       height: 100%; width: 0%; border-radius: 999px;
       background: linear-gradient(90deg, var(--primary), #60a5fa);
-      transition: width 0.35s ease;
+      transition: width 0.15s linear;
     }
 
     /* ── stats row ───────────────────────────────────────── */
@@ -420,9 +420,9 @@ function startProgressPolling() {
       const r = await fetch('/api/progress');
       if (!r.ok) return;
       const p = await r.json();
-      setProgress(p.percent, p.current, p.total);
+      setProgress(p.percent, p.current, p.total, p.phase);
     } catch (_) {}
-  }, 400);
+  }, 200);
 }
 
 function stopProgressPolling(finalPct) {
@@ -435,13 +435,14 @@ function stopProgressPolling(finalPct) {
   }, 1200);
 }
 
-function setProgress(pct, current, total) {
+function setProgress(pct, current, total, phase) {
   document.getElementById('progressFill').style.width = pct + '%';
   document.getElementById('progressPct').textContent  = pct + '%';
+  const prefix = phase === 'indexing' ? 'Fetching index pages…' : 'Retrieving records…';
   document.getElementById('progressLabel').textContent =
     current != null && total != null
-      ? `Retrieving records… ${current} / ${total}`
-      : pct >= 100 ? 'Complete' : 'Retrieving…';
+      ? `${prefix} ${current} / ${total}`
+      : pct >= 100 ? 'Complete' : prefix;
 }
 
 async function onFetch() {

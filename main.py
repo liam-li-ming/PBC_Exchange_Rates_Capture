@@ -29,7 +29,7 @@ def run(num_rows: int = 20):
             print(f"Error processing {d} ({url}): {e}")
             return None
 
-    with ThreadPoolExecutor(max_workers = len(links)) as executor:
+    with ThreadPoolExecutor(max_workers = 1000) as executor:
         results = list(executor.map(lambda x: process_single_date(x[0], x[1]),
                                     zip(links['date'], links['url'])))
 
