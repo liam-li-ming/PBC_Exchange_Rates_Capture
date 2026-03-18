@@ -141,6 +141,10 @@
     }
     .mode-toggle button { border-radius: 0; background: transparent; color: var(--muted); border: none; }
     .mode-toggle button.active { background: var(--primary); color: #fff; }
+    select.window-select {
+      padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--r);
+      background: var(--bg); color: var(--text); font-size: 13px; cursor: pointer;
+    }
 
     /* ── currency dropdown ───────────────────────────────── */
     .ccy-wrapper { position: relative; }
@@ -325,7 +329,20 @@
         <div class="mode-toggle">
           <button id="btnRaw"  class="active" onclick="setMode('raw')">Raw Rates</button>
           <button id="btnNorm" onclick="setMode('normalized')">Strength Comparison</button>
+          <button id="btnVol"  onclick="setMode('volatility')">Volatility</button>
         </div>
+      </div>
+
+      <!-- rolling window selector (volatility mode only) -->
+      <div class="ctrl-group" id="volWindowGroup" style="display:none">
+        <span class="ctrl-lbl">Rolling Window</span>
+        <select class="window-select" id="volWindowSelect" onchange="onVolWindowChange()">
+          <option value="7">7 days</option>
+          <option value="14">14 days</option>
+          <option value="20" selected>20 days</option>
+          <option value="30">30 days</option>
+          <option value="60">60 days</option>
+        </select>
       </div>
 
       <!-- date range -->
@@ -349,6 +366,11 @@
       📊 All series indexed to <b>100</b> at the earliest date in the selected range.&nbsp;
       For <b>X/CNY</b> pairs: value&nbsp;&gt;&nbsp;100 means X strengthened vs CNY.&nbsp;
       For <b>CNY/X</b> pairs: value&nbsp;&gt;&nbsp;100 means CNY strengthened vs X.
+    </div>
+    <div id="bannerVol" class="info-banner info" style="display:none">
+      📉 <b>Rolling Volatility</b> — N-day rolling standard deviation of daily % returns, shown as %.
+      Higher values indicate greater rate fluctuation over the window.
+      Currencies with fewer than N+1 data points in the selected range are omitted.
     </div>
 
     <div class="chart-wrap">
@@ -381,7 +403,8 @@
 // ═══════════════════════════════════════════════════════════════
 let allData   = null;   // API response object
 let chartInst = null;
-let chartMode = 'raw';  // 'raw' | 'normalized'
+let chartMode = 'raw';  // 'raw' | 'normalized' | 'volatility'
+let volatilityWindow = 20;
 let tblSort   = { col: 'date', dir: 'desc' };
 let tblPage   = 0;
 const PAGE    = 50;
@@ -596,7 +619,10 @@ function setMode(m) {
   chartMode = m;
   document.getElementById('btnRaw').classList.toggle('active',  m === 'raw');
   document.getElementById('btnNorm').classList.toggle('active', m === 'normalized');
-  document.getElementById('bannerNorm').style.display = m === 'normalized' ? '' : 'none';
+  document.getElementById('btnVol').classList.toggle('active',  m === 'volatility');
+  document.getElementById('bannerNorm').style.display    = m === 'normalized' ? '' : 'none';
+  document.getElementById('bannerVol').style.display     = m === 'volatility'  ? '' : 'none';
+  document.getElementById('volWindowGroup').style.display = m === 'volatility' ? '' : 'none';
   renderChart();
 }
 
@@ -624,10 +650,18 @@ function renderChart() {
 
   const labels   = data.map(r => r.date);
   const isNorm   = chartMode === 'normalized';
+  const isVol    = chartMode === 'volatility';
   const pts      = data.length;
   const datasets = isNorm
     ? buildNormalized(data, selected, pts)
-    : buildRaw(data, selected, pts);
+    : isVol
+      ? buildVolatility(data, selected, pts, volatilityWindow)
+      : buildRaw(data, selected, pts);
+
+  if (isVol && datasets.length === 0) {
+    toast(`No currency has ${volatilityWindow + 1}+ data points in this range — try a shorter window or wider date range`, 'err');
+    return;
+  }
 
   if (isNorm) {
     // reference line at 100
@@ -657,9 +691,9 @@ function renderChart() {
         callbacks: {
           label: ctx => {
             if (ctx.raw == null) return null;
-            return isNorm
-              ? ` ${ctx.dataset.label}: ${ctx.raw.toFixed(2)}`
-              : ` ${ctx.dataset.label}: ${ctx.raw.toFixed(4)}`;
+            if (isVol)  return ` ${ctx.dataset.label}: ${ctx.raw.toFixed(2)}%`;
+            if (isNorm) return ` ${ctx.dataset.label}: ${ctx.raw.toFixed(2)}`;
+            return ` ${ctx.dataset.label}: ${ctx.raw.toFixed(4)}`;
           },
         },
       },
@@ -672,9 +706,11 @@ function renderChart() {
       y: {
         title: {
           display: true,
-          text: isNorm
-            ? `Indexed to 100  (base: ${data[0]?.date})`
-            : 'Rate',
+          text: isVol
+            ? `Rolling ${volatilityWindow}-day Volatility (%)`
+            : isNorm
+              ? `Indexed to 100  (base: ${data[0]?.date})`
+              : 'Rate',
           font: { size: 11 },
         },
         grid: { color: 'rgba(128,128,128,.12)' },
@@ -727,6 +763,53 @@ function buildNormalized(data, currencies, pts) {
     spanGaps: true,
     fill: false,
   }));
+}
+
+function buildVolatility(data, currencies, pts, window) {
+  return currencies.map(ccy => {
+    // Compact series of non-null values (skips weekends/holidays)
+    const series = data
+      .map(r => ({ date: r.date, v: r[ccy] ?? null }))
+      .filter(p => p.v !== null);
+
+    // Need at least window+1 points to compute one rolling value
+    if (series.length < window + 1) return null;
+
+    // Build a date → rolling stddev lookup
+    const volByDate = {};
+    for (let i = window; i < series.length; i++) {
+      const slice = series.slice(i - window, i + 1);  // window+1 prices → window returns
+      const returns = [];
+      for (let j = 1; j < slice.length; j++) {
+        returns.push((slice[j].v - slice[j - 1].v) / slice[j - 1].v);
+      }
+      const mean     = returns.reduce((s, r) => s + r, 0) / returns.length;
+      const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
+      volByDate[slice[slice.length - 1].date] = +(Math.sqrt(variance) * 100).toFixed(4);
+    }
+
+    // Re-align to the full date axis
+    const chartData = data.map(r => volByDate[r.date] ?? null);
+    if (!chartData.some(v => v !== null)) return null;
+
+    return {
+      label: ccy,
+      data: chartData,
+      borderColor: colorOf(ccy),
+      backgroundColor: colorOf(ccy) + '18',
+      borderWidth: 2,
+      pointRadius: pts > 120 ? 0 : 3,
+      pointHoverRadius: 5,
+      tension: 0.15,
+      spanGaps: true,
+      fill: false,
+    };
+  }).filter(ds => ds !== null);
+}
+
+function onVolWindowChange() {
+  volatilityWindow = parseInt(document.getElementById('volWindowSelect').value);
+  renderChart();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -848,8 +931,13 @@ function resetAll() {
 
   document.getElementById('btnRaw').classList.add('active');
   document.getElementById('btnNorm').classList.remove('active');
-  document.getElementById('bannerScale').style.display = 'none';
-  document.getElementById('bannerNorm').style.display  = 'none';
+  document.getElementById('btnVol').classList.remove('active');
+  document.getElementById('bannerScale').style.display    = 'none';
+  document.getElementById('bannerNorm').style.display     = 'none';
+  document.getElementById('bannerVol').style.display      = 'none';
+  document.getElementById('volWindowGroup').style.display = 'none';
+  document.getElementById('volWindowSelect').value        = '20';
+  volatilityWindow = 20;
 
   setStatus('No data loaded — enter a record count and click Fetch Rates.', '');
   toast('Reset — ready for a new fetch', 'ok');
